@@ -108,23 +108,27 @@
         </div>
     </div>
 
+    <script src="Config.js"></script>
     <script>
-        // ⚠️ ใส่ URL ของ Web App ของคุณที่นี่:
-        const WEB_APP_URL = "https://script.google.com/macros/s/ใส่_ID_ของคุณที่นี่/exec";
-
         let sigPad = null;
         let stream = null;
         let faceImg = "";
         let sigImg = "";
 
-        // ... (โค้ดฟังก์ชันการทำงานอื่นๆ เหมือนเดิมทุกประการ) ...
+        // หากรันใน Google Apps Script แบบฝั่ง Server โดยตรงและไม่มีไฟล์ Config.js 
+        // ให้ยกเลิกคอมเมนต์บรรทัดด้านล่างแล้วใส่ URL ของเว็บแอปคุณได้เลยครับ
+        // const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwN_dP6AshriiNt9auC1LKD-oCgdRKbpwNqcGpJa13YpXDPhoaNOCMw2jyp776U6uNysQ/exec";
+
         function addCase(isFirst = false) {
             const container = document.getElementById('caseContainer');
             if (!container) return;
+            
             const div = document.createElement('div');
             div.className = 'case-card shadow-sm';
             const del = isFirst ? "" : `<button type="button" onclick="this.parentElement.remove()" class="absolute top-2 right-4 text-gray-300 text-2xl">×</button>`;
-            div.innerHTML = `${del}
+            
+            div.innerHTML = `
+                ${del}
                 <label class="label-text text-sm">ชื่อผู้ป่วย / HN</label>
                 <input type="text" class="input-field p-in mb-2" placeholder="กรอกชื่อผู้ป่วย หรือ HN">
                 <label class="label-text text-sm">Diagnosis</label>
@@ -134,72 +138,193 @@
                     <option value="P">P</option>
                     <option value="A">A</option>
                     <option value="O">O</option>
-                </select>`;
+                </select>
+            `;
             container.appendChild(div);
         }
 
-        function goToStep2() { document.getElementById('step1').style.display = 'none'; document.getElementById('step2').style.display = 'block'; window.scrollTo(0,0); setTimeout(initSignature, 200); }
-        function goToStep1() { document.getElementById('step2').style.display = 'none'; document.getElementById('step1').style.display = 'block'; }
+        function goToStep2() { 
+            document.getElementById('step1').style.display = 'none'; 
+            document.getElementById('step2').style.display = 'block'; 
+            window.scrollTo(0,0);
+            setTimeout(initSignature, 200); 
+        }
+
+        function goToStep1() { 
+            document.getElementById('step2').style.display = 'none'; 
+            document.getElementById('step1').style.display = 'block'; 
+        }
 
         function initSignature() {
             const canvas = document.getElementById("signature-pad");
             if (!canvas) return;
-            sigPad = new SignaturePad(canvas, { backgroundColor: 'rgba(255, 255, 255, 0)', penColor: 'rgb(0, 0, 0)', velocityFilterWeight: 0.5, minWidth: 1.0, maxWidth: 2.5 });
-            sigPad.addEventListener("endStroke", () => { sigImg = sigPad.toDataURL(); document.getElementById('signature-frozen-view').src = sigImg; document.getElementById('signature-frozen-view').style.display = 'block'; checkNext(); });
+
+            sigPad = new SignaturePad(canvas, {
+                backgroundColor: 'rgba(255, 255, 255, 0)',
+                penColor: 'rgb(0, 0, 0)',
+                velocityFilterWeight: 0.5,
+                minWidth: 1.0,
+                maxWidth: 2.5
+            });
+
+            sigPad.addEventListener("beginStroke", () => { document.body.style.overflow = "hidden"; });
+            sigPad.addEventListener("endStroke", () => {
+                document.body.style.overflow = "auto";
+                sigImg = sigPad.toDataURL();
+                const frozenView = document.getElementById('signature-frozen-view');
+                if (frozenView) {
+                    frozenView.src = sigImg;
+                    frozenView.style.display = 'block';
+                }
+                checkNext(); 
+            });
+
+            const ratio = Math.max(window.devicePixelRatio || 1, 1);
+            canvas.width = canvas.offsetWidth * ratio;
+            canvas.height = canvas.offsetHeight * ratio;
+            canvas.getContext("2d").scale(ratio, ratio);
+            
+            if(sigImg && sigPad) sigPad.fromDataURL(sigImg);
         }
 
-        function clearSig() { if (sigPad) sigPad.clear(); sigImg = ""; document.getElementById('signature-frozen-view').style.display = 'none'; checkNext(); }
+        function clearSig() { 
+            if (sigPad) sigPad.clear(); 
+            sigImg = ""; 
+            const frozenView = document.getElementById('signature-frozen-view');
+            if (frozenView) frozenView.style.display = 'none';
+            checkNext();
+        }
 
         async function openCamera() {
             const video = document.getElementById('camera-preview');
+            const startBtn = document.getElementById('start-camera-btn');
+            const captureBtn = document.getElementById('capture-btn');
+            const previewImg = document.getElementById('preview');
+
             try {
                 if (stream) { stream.getTracks().forEach(track => track.stop()); }
                 stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-                video.srcObject = stream; video.classList.remove('hidden');
-                document.getElementById('start-camera-btn').classList.add('hidden');
-                document.getElementById('capture-btn').classList.remove('hidden');
-            } catch (err) { Swal.fire('กล้องไม่ทำงาน', 'โปรดอนุญาตสิทธิ์กล้อง', 'warning'); }
+                
+                video.srcObject = stream;
+                video.classList.remove('hidden');
+                previewImg.classList.add('hidden');
+                startBtn.classList.add('hidden');
+                captureBtn.classList.remove('hidden');
+                
+                video.setAttribute("playsinline", true);
+                video.play();
+            } catch (err) {
+                console.error("Camera Error:", err);
+                Swal.fire({
+                    title: 'กล้องไม่ทำงาน',
+                    text: 'โปรดตรวจสอบสิทธิ์การเข้าถึงกล้อง หรือคัดลอกลิงก์ไปเปิดบนเบราว์เซอร์หลัก เช่น Chrome/Safari โดยตรงครับ',
+                    icon: 'warning'
+                });
+            }
         }
 
         function takePhoto() {
             const v = document.getElementById('camera-preview');
+            const previewImg = document.getElementById('preview');
+            const captureBtn = document.getElementById('capture-btn');
+            
             const c = document.createElement('canvas');
-            c.width = v.videoWidth; c.height = v.videoHeight;
+            c.width = v.videoWidth || 640; 
+            c.height = v.videoHeight || 480;
             c.getContext('2d').drawImage(v, 0, 0);
             faceImg = c.toDataURL('image/jpeg', 0.6);
-            document.getElementById('preview').src = faceImg;
-            document.getElementById('preview').classList.remove('hidden');
+            
+            previewImg.src = faceImg;
+            previewImg.classList.remove('hidden');
             v.classList.add('hidden');
+            captureBtn.innerText = "ถ่ายใหม่";
+            
             if(stream) stream.getTracks().forEach(t => t.stop());
         }
 
         function checkNext() {
-            const hasStaffName = document.getElementById('staffName').value.trim().length >= 2;
-            const hasSignature = sigImg !== "";
+            const staffNameInput = document.getElementById('staffName');
+            const hasStaffName = staffNameInput && staffNameInput.value.trim().length >= 2;
+            const hasSignature = sigImg !== ""; 
             const startCamBtn = document.getElementById('start-camera-btn');
-            if (hasStaffName && hasSignature) startCamBtn.classList.remove('opacity-30', 'pointer-events-none');
-            else startCamBtn.classList.add('opacity-30', 'pointer-events-none');
+            
+            if (!startCamBtn) return;
+            if (hasStaffName && hasSignature) {
+                startCamBtn.classList.remove('opacity-30', 'pointer-events-none');
+            } else {
+                startCamBtn.classList.add('opacity-30', 'pointer-events-none');
+            }
         }
 
-        document.addEventListener('input', (e) => { if (e.target.id === 'staffName') checkNext(); });
+        document.addEventListener('input', function (e) {
+            if (e.target.id === 'staffName') { checkNext(); }
+        });
+
+        window.onload = function() {
+            try {
+                const nameField = document.getElementById('name');
+                const idField = document.getElementById('studentId');
+                const dateField = document.getElementById('workDate');
+                
+                if (nameField) nameField.value = localStorage.getItem('savedName') || localStorage.getItem('name') || "";
+                if (idField) idField.value = localStorage.getItem('savedId') || localStorage.getItem('studentId') || localStorage.getItem('student_id') || "";
+                if (dateField) dateField.valueAsDate = new Date();
+                
+                addCase(true);
+            } catch (e) {
+                console.error("Onload Error: ", e);
+            }
+        };
 
         function submitAll() {
             const cases = Array.from(document.querySelectorAll('.case-card')).map((c) => ({
-                patient: c.querySelector('.p-in').value || "-", diag: c.querySelector('.d-in').value || "-", note: c.querySelector('.n-in').value
+                patient: c.querySelector('.p-in').value || "-",
+                diag: c.querySelector('.d-in').value || "-",
+                note: c.querySelector('.n-in').value
             }));
+
             const fullName = document.getElementById('name').value.trim();
             const studentIdValue = document.getElementById('studentId').value.trim();
 
-            if(!sigImg || !faceImg || !fullName || !studentIdValue) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลให้ครบครับ', 'warning');
+            if(!sigImg) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณาให้อาจารย์เซ็นชื่อก่อนครับ', 'warning');
+            if(!faceImg) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากดเปิดกล้องและถ่ายรูปเพื่อยืนยันก่อนครับ', 'warning');
+            if(!fullName) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกชื่อ นสพ. ด้วยครับ', 'warning');
+            if(!studentIdValue) return Swal.fire('ข้อมูลไม่ครบ', 'กรุณากรอกรหัสนิสิตด้วยครับ', 'warning');
 
-            Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading() });
+            localStorage.setItem('savedName', fullName);
+            localStorage.setItem('savedId', studentIdValue);
+
+            Swal.fire({ title: 'กำลังบันทึกข้อมูล CheckOut...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
             
+            // ส่ง Object ข้อมูลไปยัง Web App ของ Google Apps Script ตัวใหม่ที่แก้ไขแล้ว
             fetch(WEB_APP_URL, {
-                method: "POST", mode: "no-cors",
-                body: JSON.stringify({ studentName: fullName, studentId: studentIdValue, workDate: document.getElementById('workDate').value, shiftTime: document.getElementById('shiftTime').value, base64: faceImg, signature: sigImg, staffName: document.getElementById('staffName').value, cases: cases })
+                method: "POST",
+                mode: "no-cors",
+                headers: { "Content-Type": "text/plain" },
+                body: JSON.stringify({
+                    studentName: fullName,
+                    studentId: studentIdValue,
+                    workDate: document.getElementById('workDate').value,
+                    shiftTime: document.getElementById('shiftTime').value,
+                    base64: faceImg, 
+                    signature: sigImg,
+                    staffName: document.getElementById('staffName').value,
+                    cases: cases
+                })
             })
-            .then(() => { Swal.fire('สำเร็จ!', 'บันทึกข้อมูลเรียบร้อย', 'success').then(() => location.reload()); })
-            .catch(() => Swal.fire('ผิดพลาด', 'ไม่สามารถเชื่อมต่อระบบ', 'error'));
+            .then(() => {
+                Swal.fire({
+                    title: 'สำเร็จ!',
+                    text: 'บันทึกข้อมูล CheckOut และเคสคนไข้แยกโฟลเดอร์เรียบร้อยแล้วครับ',
+                    icon: 'success'
+                }).then(() => {
+                    location.reload();
+                });
+            })
+            .catch((err) => {
+                console.error(err);
+                Swal.fire('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อระบบบันทึกเวลาได้', 'error');
+            });
         }
     </script>
 </body>
